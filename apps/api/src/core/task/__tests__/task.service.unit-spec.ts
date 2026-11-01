@@ -19,13 +19,14 @@ const TASK: Task = {
 describe("TaskService", () => {
   const findById = vi.fn()
   const findPage = vi.fn()
+  const countByStatus = vi.fn()
   const update = vi.fn()
   const deleteRow = vi.fn()
   let taskService: TaskService
 
   beforeEach(() => {
     vi.resetAllMocks()
-    const taskDao: Partial<TaskDao> = { findById, findPage, update, delete: deleteRow }
+    const taskDao: Partial<TaskDao> = { findById, findPage, countByStatus, update, delete: deleteRow }
     taskService = new TaskService(taskDao as TaskDao)
   })
 
@@ -45,12 +46,19 @@ describe("TaskService", () => {
     await expect(taskService.getTask(ID)).rejects.toEqual(new ResourceNotFoundException("Task", ID))
   })
 
-  it("should return the page with the paging it was asked for", async () => {
+  it("should return the page with the paging it was asked for and the counts per status", async () => {
     findPage.mockResolvedValue([[createTaskEntity()], 7])
+    countByStatus.mockResolvedValue({ all: 9, active: 7, completed: 2 })
 
-    const page = await taskService.listTasks({ status: "all", limit: 1, offset: 3 })
+    const page = await taskService.listTasks({ status: "active", limit: 1, offset: 3 })
 
-    expect(page).toEqual({ items: [TASK], total: 7, limit: 1, offset: 3 })
+    expect(page).toEqual({
+      items: [TASK],
+      total: 7,
+      limit: 1,
+      offset: 3,
+      counts: { all: 9, active: 7, completed: 2 },
+    })
   })
 
   it("should report the task as not found when an update matches no row and the task is gone", async () => {

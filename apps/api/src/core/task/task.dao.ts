@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
-import type { ListTasksParams, UpdateTask } from "@workspace/common"
+import type { ListTasksParams, TaskCounts, UpdateTask } from "@workspace/common"
 import { Repository } from "typeorm"
 import { TaskEntity } from "./entities/task.entity"
 
@@ -23,6 +23,20 @@ export class TaskDao {
       take: limit,
       skip: offset,
     })
+  }
+
+  async countByStatus(): Promise<TaskCounts> {
+    const rows: { completed: boolean; count: number }[] = await this.repository
+      .createQueryBuilder("task")
+      .select("task.completed", "completed")
+      .addSelect("count(*)::int", "count")
+      .groupBy("task.completed")
+      .getRawMany()
+
+    const completed = rows.find((row) => row.completed)?.count ?? 0
+    const active = rows.find((row) => !row.completed)?.count ?? 0
+
+    return { all: active + completed, active, completed }
   }
 
   /**

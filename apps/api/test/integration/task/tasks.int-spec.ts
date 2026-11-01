@@ -1,4 +1,4 @@
-import type { Problem, Task, TaskPage } from "@workspace/common"
+import type { Problem, Task, TaskCounts, TaskPage } from "@workspace/common"
 import request from "supertest"
 import type TestAgent from "supertest/lib/agent"
 import type { DataSource } from "typeorm"
@@ -103,7 +103,22 @@ describe("/api/v1/tasks", () => {
     })
   })
 
+  describe("GET when there are no tasks", () => {
+    it("should return an empty page with every count at zero", async () => {
+      const response = await api.get(TASKS).expect(200)
+
+      expect(response.body).toEqual({
+        items: [],
+        total: 0,
+        limit: 50,
+        offset: 0,
+        counts: { all: 0, active: 0, completed: 0 },
+      })
+    })
+  })
+
   describe("GET", () => {
+    const counts: TaskCounts = { all: 3, active: 2, completed: 1 }
     let first: Task
     let second: Task
     let third: Task
@@ -118,7 +133,7 @@ describe("/api/v1/tasks", () => {
     it("should list every task newest first with the default paging", async () => {
       const response = await api.get(TASKS).expect(200)
 
-      const expected: TaskPage = { items: [third, second, first], total: 3, limit: 50, offset: 0 }
+      const expected: TaskPage = { items: [third, second, first], total: 3, limit: 50, offset: 0, counts }
       expect(response.body).toEqual(expected)
     })
 
@@ -130,25 +145,25 @@ describe("/api/v1/tasks", () => {
 
       const response = await api.get(TASKS).query({ status }).expect(200)
 
-      expect(response.body).toEqual({ items, total: items.length, limit: 50, offset: 0 })
+      expect(response.body).toEqual({ items, total: items.length, limit: 50, offset: 0, counts })
     })
 
     it("should return the requested slice when given limit and offset", async () => {
       const response = await api.get(TASKS).query({ limit: 2, offset: 2 }).expect(200)
 
-      expect(response.body).toEqual({ items: [first], total: 3, limit: 2, offset: 2 })
+      expect(response.body).toEqual({ items: [first], total: 3, limit: 2, offset: 2, counts })
     })
 
     it("should apply every list option when status, limit and offset are all given", async () => {
       const response = await api.get(TASKS).query({ status: "active", limit: 1, offset: 1 }).expect(200)
 
-      expect(response.body).toEqual({ items: [first], total: 2, limit: 1, offset: 1 })
+      expect(response.body).toEqual({ items: [first], total: 2, limit: 1, offset: 1, counts })
     })
 
     it("should return an empty page when the offset is past the end", async () => {
       const response = await api.get(TASKS).query({ offset: 10 }).expect(200)
 
-      expect(response.body).toEqual({ items: [], total: 3, limit: 50, offset: 10 })
+      expect(response.body).toEqual({ items: [], total: 3, limit: 50, offset: 10, counts })
     })
 
     it("should reject the query when the status is unknown", async () => {

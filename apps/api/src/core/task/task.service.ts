@@ -11,9 +11,9 @@ export class TaskService {
   constructor(private readonly taskDao: TaskDao) {}
 
   async listTasks(params: ListTasksParams): Promise<TaskPage> {
-    const [entities, total] = await this.taskDao.findPage(params)
+    const [[entities, total], counts] = await Promise.all([this.taskDao.findPage(params), this.taskDao.countByStatus()])
 
-    return { items: entities.map(toTask), total, limit: params.limit, offset: params.offset }
+    return { items: entities.map(toTask), total, limit: params.limit, offset: params.offset, counts }
   }
 
   async getTask(id: string): Promise<Task> {
