@@ -12,6 +12,12 @@ export class ProblemException extends HttpException {
   }
 }
 
+export class InvalidRequestException extends ProblemException {
+  constructor(title: string, detail: string) {
+    super(ProblemType.validation, HttpStatus.BAD_REQUEST, title, detail)
+  }
+}
+
 export class ResourceNotFoundException extends ProblemException {
   constructor(resource: string, id: string) {
     super(ProblemType.notFound, HttpStatus.NOT_FOUND, "Resource not found", `${resource} ${id} does not exist`)

@@ -6,6 +6,7 @@ import { Logger } from "nestjs-pino"
 import { cleanupOpenApiDoc } from "nestjs-zod"
 import type { Env } from "./common/config/env"
 import { jsonBody } from "./common/http/json-body"
+import { API_PREFIX } from "./common/http/routes"
 
 /** Nest's own body parser is off: `configureApp` registers one with a size limit and problem responses. */
 export const APP_OPTIONS: NestApplicationOptions = { bufferLogs: true, bodyParser: false }
@@ -14,13 +15,16 @@ export function configureApp(app: NestExpressApplication, env: Env): void {
   app.useLogger(app.get(Logger))
   app.enableShutdownHooks()
 
+  // ETags come from the task version; Express's body-hash ETags would contradict them.
+  app.set("etag", false)
+
   app.use(helmet())
   app.use(...jsonBody())
   if (env.CORS_ORIGINS.length > 0) {
     app.enableCors({ origin: env.CORS_ORIGINS, exposedHeaders: ["ETag", "Location", "X-Request-Id"] })
   }
 
-  app.setGlobalPrefix("api")
+  app.setGlobalPrefix(API_PREFIX)
   app.enableVersioning({ type: VersioningType.URI })
 
   if (env.SWAGGER_ENABLED) {

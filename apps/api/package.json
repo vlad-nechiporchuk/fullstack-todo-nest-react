@@ -9,9 +9,9 @@
     "dev:debug": "nest start --watch --debug 127.0.0.1:9229",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.mts && vitest run --config vitest.int.config.mts",
+    "test": "pnpm test:unit && pnpm test:int",
     "test:unit": "vitest run --config vitest.config.mts",
-    "test:int": "vitest run --config vitest.int.config.mts",
+    "test:int": "nest build && vitest run --config vitest.int.config.mts",
     "migration:run": "nest build && node dist/platform/database/migrate.js",
     "migration:revert": "nest build && typeorm migration:revert -d dist/platform/database/data-source.js",
     "migration:generate": "nest build && typeorm migration:generate -d dist/platform/database/data-source.js"

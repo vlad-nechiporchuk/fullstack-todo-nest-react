@@ -14,3 +14,4 @@ export type TaskStatusFilter = z.infer<typeof taskStatusFilterSchema>
 export type CreateTask = z.infer<typeof createTaskSchema>
 export type UpdateTask = z.infer<typeof updateTaskSchema>
 export type ListTasksQuery = z.input<typeof listTasksQuerySchema>
+export type ListTasksParams = z.output<typeof listTasksQuerySchema>
