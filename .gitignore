@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.turbo
+*.tsbuildinfo
+.env
+!.env.example
+.DS_Store
+playwright-report
+test-results
+
+# Local working notes (design spec, implementation plan) — not part of the deliverable
+docs/superpowers/
+.claude/settings.local.json
