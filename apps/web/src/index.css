@@ -9,6 +9,28 @@
   --color-brand-700: #2a38b5;
   --color-ink: #141a33;
   --color-page: #f6f6f8;
+  --animate-task-in: task-in 200ms ease-out;
+  --animate-task-saved: task-saved 900ms ease-out;
+  --animate-task-grow: task-grow 200ms ease-out;
+
+  @keyframes task-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes task-grow {
+    from {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+  }
+
+  @keyframes task-saved {
+    from {
+      background-color: var(--color-brand-50);
+    }
+  }
 }
 
 @layer base {
