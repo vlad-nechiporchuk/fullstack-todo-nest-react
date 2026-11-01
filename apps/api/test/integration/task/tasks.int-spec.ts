@@ -368,18 +368,26 @@ describe("/api/v1/tasks", () => {
       expect(response.body).toEqual(after)
     })
 
-    it("should reject a malformed If-Match header", async () => {
+    it.each([
+      ["not a quoted ETag", "1"],
+      ["a version beyond what the database holds", '"2147483648"'],
+    ])("should reject an If-Match header that is %s", async (_case, ifMatch) => {
       const task = await createTask("Buy milk")
 
-      const response = await api.patch(`${TASKS}/${task.id}`).set("If-Match", "1").send({ completed: true }).expect(400)
+      const response = await api
+        .patch(`${TASKS}/${task.id}`)
+        .set("If-Match", ifMatch)
+        .send({ completed: true })
+        .expect(400)
 
       expectProblem(response, {
         type: `${PROBLEMS}/validation-error`,
         title: "Invalid If-Match header",
         status: 400,
-        detail: 'If-Match must be an ETag such as "3", got: 1',
+        detail: `If-Match must be an ETag such as "3", got: ${ifMatch}`,
         instance: `${TASKS}/${task.id}`,
       })
+      expect(await readTask(task.id)).toEqual(task)
     })
 
     it.each([
