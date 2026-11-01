@@ -4,6 +4,11 @@ import type { ListTasksParams, TaskCounts, UpdateTask } from "@workspace/common"
 import { Repository } from "typeorm"
 import { TaskEntity } from "./entities/task.entity"
 
+export interface TaskPageRows {
+  entities: TaskEntity[]
+  counts: TaskCounts
+}
+
 @Injectable()
 export class TaskDao {
   constructor(@InjectRepository(TaskEntity) private readonly repository: Repository<TaskEntity>) {}
@@ -16,27 +21,20 @@ export class TaskDao {
     return this.repository.findOneBy({ id })
   }
 
-  findPage({ status, limit, offset }: ListTasksParams): Promise<[TaskEntity[], number]> {
-    return this.repository.findAndCount({
-      where: status === "all" ? {} : { completed: status === "completed" },
-      order: { createdAt: "DESC", id: "DESC" },
-      take: limit,
-      skip: offset,
+  /** Reads the page and the counts from one snapshot, so the two never disagree. */
+  findPageWithCounts({ status, limit, offset }: ListTasksParams): Promise<TaskPageRows> {
+    return this.repository.manager.transaction("REPEATABLE READ", async (manager) => {
+      const tasks = manager.getRepository(TaskEntity)
+      const entities = await tasks.find({
+        where: status === "all" ? {} : { completed: status === "completed" },
+        order: { createdAt: "DESC", id: "DESC" },
+        take: limit,
+        skip: offset,
+      })
+      const counts = await countByStatus(tasks)
+
+      return { entities, counts }
     })
-  }
-
-  async countByStatus(): Promise<TaskCounts> {
-    const rows: { completed: boolean; count: number }[] = await this.repository
-      .createQueryBuilder("task")
-      .select("task.completed", "completed")
-      .addSelect("count(*)::int", "count")
-      .groupBy("task.completed")
-      .getRawMany()
-
-    const completed = rows.find((row) => row.completed)?.count ?? 0
-    const active = rows.find((row) => !row.completed)?.count ?? 0
-
-    return { all: active + completed, active, completed }
   }
 
   /**
@@ -81,4 +79,18 @@ export class TaskDao {
 
     return Boolean(result.affected)
   }
+}
+
+async function countByStatus(tasks: Repository<TaskEntity>): Promise<TaskCounts> {
+  const rows: { completed: boolean; count: number }[] = await tasks
+    .createQueryBuilder("task")
+    .select("task.completed", "completed")
+    .addSelect("count(*)::int", "count")
+    .groupBy("task.completed")
+    .getRawMany()
+
+  const completed = rows.find((row) => row.completed)?.count ?? 0
+  const active = rows.find((row) => !row.completed)?.count ?? 0
+
+  return { all: active + completed, active, completed }
 }

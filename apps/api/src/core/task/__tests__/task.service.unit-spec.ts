@@ -18,15 +18,14 @@ const TASK: Task = {
 
 describe("TaskService", () => {
   const findById = vi.fn()
-  const findPage = vi.fn()
-  const countByStatus = vi.fn()
+  const findPageWithCounts = vi.fn()
   const update = vi.fn()
   const deleteRow = vi.fn()
   let taskService: TaskService
 
   beforeEach(() => {
     vi.resetAllMocks()
-    const taskDao: Partial<TaskDao> = { findById, findPage, countByStatus, update, delete: deleteRow }
+    const taskDao: Partial<TaskDao> = { findById, findPageWithCounts, update, delete: deleteRow }
     taskService = new TaskService(taskDao as TaskDao)
   })
 
@@ -46,9 +45,11 @@ describe("TaskService", () => {
     await expect(taskService.getTask(ID)).rejects.toEqual(new ResourceNotFoundException("Task", ID))
   })
 
-  it("should return the page with the paging it was asked for and the counts per status", async () => {
-    findPage.mockResolvedValue([[createTaskEntity()], 7])
-    countByStatus.mockResolvedValue({ all: 9, active: 7, completed: 2 })
+  it("should take the total from the count of the status it lists", async () => {
+    findPageWithCounts.mockResolvedValue({
+      entities: [createTaskEntity()],
+      counts: { all: 9, active: 7, completed: 2 },
+    })
 
     const page = await taskService.listTasks({ status: "active", limit: 1, offset: 3 })
 

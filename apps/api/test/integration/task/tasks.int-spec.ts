@@ -211,10 +211,13 @@ describe("/api/v1/tasks", () => {
       })
     })
 
-    it("should answer 404 when the task does not exist", async () => {
-      const response = await api.get(`${TASKS}/${MISSING_ID}`).expect(404)
+    it.each([
+      ["a version 4 UUID", MISSING_ID],
+      ["a UUID of another version", "01890a5d-ac96-774b-bcce-b302099a8057"],
+    ])("should answer 404 when the id is %s no task has", async (_case, id) => {
+      const response = await api.get(`${TASKS}/${id}`).expect(404)
 
-      expectProblem(response, buildExpectedNotFoundProblem(MISSING_ID))
+      expectProblem(response, buildExpectedNotFoundProblem(id))
     })
   })
 
