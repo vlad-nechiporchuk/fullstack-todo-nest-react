@@ -8,7 +8,7 @@ import {
   forgetVersion,
   readVersion,
   rememberVersion,
-  restoreLists,
+  rollbackChange,
   snapshotLists,
   storeConfirmed,
   storeConfirmedVersion,
@@ -56,9 +56,9 @@ export function useUpdateTask(id: string, onFailure: (error: unknown) => void) {
       await queryClient.cancelQueries({ queryKey: TASK_KEYS.lists() })
       rememberVersion(queryClient, id)
       const lists = snapshotLists(queryClient)
-      applyPatch(queryClient, id, patch)
+      const change = applyPatch(queryClient, id, patch)
 
-      return { lists }
+      return { lists, change }
     },
     onSuccess: (confirmed) => {
       confirmVersion(queryClient, id, confirmed.version)
@@ -70,8 +70,8 @@ export function useUpdateTask(id: string, onFailure: (error: unknown) => void) {
       }
     },
     onError: (error, _patch, context) => {
-      if (context) {
-        restoreLists(queryClient, context.lists)
+      if (context?.change) {
+        rollbackChange(queryClient, context.lists, context.change)
       }
       onFailure(error)
     },
@@ -94,13 +94,13 @@ export function useDeleteTask(id: string, onFailure: (error: unknown) => void) {
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: TASK_KEYS.lists() })
       const lists = snapshotLists(queryClient)
-      applyRemoval(queryClient, id)
+      const change = applyRemoval(queryClient, id)
 
-      return { lists }
+      return { lists, change }
     },
     onError: (error, _variables, context) => {
-      if (context) {
-        restoreLists(queryClient, context.lists)
+      if (context?.change) {
+        rollbackChange(queryClient, context.lists, context.change)
       }
       onFailure(error)
     },

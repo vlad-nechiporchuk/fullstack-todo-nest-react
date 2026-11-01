@@ -233,6 +233,41 @@ describe("TaskBoard", () => {
       ])
     })
 
+    it("should undo only the failed change when changes to two tasks overlap", async () => {
+      const readmeTask = buildTask({ id: "33333333-3333-4333-8333-333333333333", title: "Write the README" })
+      const api = installFakeTasksApi([API_TASK, readmeTask])
+      let failFirstChange = () => {}
+      const firstChangeFails = new Promise<void>((resolve) => {
+        failFirstChange = resolve
+      })
+      server.use(
+        http.patch(
+          `${TASKS_URL}/${API_TASK.id}`,
+          async () => {
+            await firstChangeFails
+            return HttpResponse.json(
+              { type: "about:blank", title: "Internal Server Error", status: 500 },
+              { status: 500 },
+            )
+          },
+          { once: true },
+        ),
+      )
+      const { user } = renderApp()
+
+      await user.click(await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' }))
+      await user.click(screen.getByRole("checkbox", { name: 'Mark "Write the README" as done' }))
+      await waitFor(() => expect(api.tasks.find((task) => task.id === readmeTask.id)?.completed).toBe(true))
+      const releaseRefetch = api.holdNext("GET")
+      failFirstChange()
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Please try again.")
+      expect(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as done' })).not.toBeChecked()
+      expect(screen.getByRole("checkbox", { name: 'Mark "Write the README" as not done' })).toBeChecked()
+      expect(readTabs()).toEqual(["All 2", "Active 1", "Completed 1"])
+      releaseRefetch()
+    })
+
     it("should send a quick second toggle with the version the first one produced", async () => {
       const api = installFakeTasksApi([API_TASK])
       const { user } = renderApp()

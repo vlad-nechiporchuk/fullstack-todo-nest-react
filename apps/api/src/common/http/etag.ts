@@ -1,6 +1,8 @@
 import { InvalidRequestException } from "../errors/domain-errors"
 
 const IF_MATCH_PATTERN = /^\s*(?:W\/)?"(\d+)"\s*$/
+// The version column is a PostgreSQL integer: a larger number can never match and would fail the query.
+const MAX_VERSION = 2_147_483_647
 
 /** Strong ETag: the version changes on every write. */
 export function toEtag(version: number): string {
@@ -17,10 +19,11 @@ export function parseIfMatch(header: string | undefined): number | undefined {
     return undefined
   }
 
-  const version = IF_MATCH_PATTERN.exec(header)?.[1]
-  if (!version) {
+  const digits = IF_MATCH_PATTERN.exec(header)?.[1]
+  const version = digits === undefined ? Number.NaN : Number(digits)
+  if (!Number.isInteger(version) || version < 1 || version > MAX_VERSION) {
     throw new InvalidRequestException("Invalid If-Match header", `If-Match must be an ETag such as "3", got: ${header}`)
   }
 
-  return Number(version)
+  return version
 }

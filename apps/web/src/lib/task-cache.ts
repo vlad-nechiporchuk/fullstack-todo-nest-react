@@ -12,13 +12,51 @@ export type TaskPages = InfiniteData<TaskPage, number>
 
 export type CachedLists = [readonly unknown[], TaskPages | undefined][]
 
+/** One optimistic change to one task: the task before it, and after it (`null` once removed). */
+export interface TaskChange {
+  before: Task
+  after: Task | null
+}
+
 export function snapshotLists(queryClient: QueryClient): CachedLists {
   return queryClient.getQueriesData<TaskPages>({ queryKey: TASK_KEYS.lists() })
 }
 
-export function restoreLists(queryClient: QueryClient, lists: CachedLists): void {
-  for (const [key, list] of lists) {
-    queryClient.setQueryData(key, list)
+/**
+ * Undoes one failed change: the task goes back to where the snapshot had it and the counts lose its effect, while
+ * every other task keeps the state it has now, including changes made after the snapshot.
+ */
+export function rollbackChange(queryClient: QueryClient, snapshot: CachedLists, change: TaskChange): void {
+  const { id } = change.before
+  const undoCounts = (counts: TaskCounts) => countTask(countTask(counts, change.after, -1), change.before, 1)
+
+  for (const [key, snapshotList] of snapshot) {
+    const current = queryClient.getQueryData<TaskPages>(key)
+    if (!current || !snapshotList) {
+      continue
+    }
+
+    const place = locateTask(snapshotList, id)
+    let removed = 0
+    const pages = current.pages.map((page, pageIndex) => {
+      const items = page.items.filter((item) => item.id !== id)
+      removed += page.items.length - items.length
+      if (place?.pageIndex === pageIndex) {
+        items.splice(place.itemIndex, 0, place.task)
+      }
+
+      return { ...page, items }
+    })
+    const restored = place ? 1 : 0
+
+    queryClient.setQueryData(key, {
+      ...current,
+      pages: pages.map((page) => ({
+        ...page,
+        total: page.total - removed + restored,
+        counts: undoCounts(page.counts),
+      })),
+    })
   }
 }
 
@@ -51,10 +89,10 @@ export function forgetVersion(queryClient: QueryClient, id: string): void {
 }
 
 /** Counts change with the patch, and a task leaves the lists whose status filter it no longer matches. */
-export function applyPatch(queryClient: QueryClient, id: string, patch: UpdateTask): void {
+export function applyPatch(queryClient: QueryClient, id: string, patch: UpdateTask): TaskChange | undefined {
   const task = findCachedTask(queryClient, id)
   if (!task) {
-    return
+    return undefined
   }
 
   const changed = { ...task, ...patch, completedAt: deriveCompletedAt(task, patch) }
@@ -67,12 +105,14 @@ export function applyPatch(queryClient: QueryClient, id: string, patch: UpdateTa
       adjustCounts,
     ),
   )
+
+  return { before: task, after: changed }
 }
 
-export function applyRemoval(queryClient: QueryClient, id: string): void {
+export function applyRemoval(queryClient: QueryClient, id: string): TaskChange | undefined {
   const task = findCachedTask(queryClient, id)
   if (!task) {
-    return
+    return undefined
   }
 
   const status = task.completed ? "completed" : "active"
@@ -84,6 +124,8 @@ export function applyRemoval(queryClient: QueryClient, id: string): void {
       (counts) => ({ ...counts, all: counts.all - 1, [status]: counts[status] - 1 }),
     ),
   )
+
+  return { before: task, after: null }
 }
 
 /** Stores the task as the API returned it, so the next update names the version the API now holds. */
@@ -164,4 +206,26 @@ function shiftCounts(before: Task, after: Task): (counts: TaskCounts) => TaskCou
 
 function matches(task: Task, status: TaskStatusFilter): boolean {
   return status === "all" || task.completed === (status === "completed")
+}
+
+function locateTask(list: TaskPages, id: string): { pageIndex: number; itemIndex: number; task: Task } | undefined {
+  for (const [pageIndex, page] of list.pages.entries()) {
+    const itemIndex = page.items.findIndex((item) => item.id === id)
+    const task = page.items[itemIndex]
+    if (task) {
+      return { pageIndex, itemIndex, task }
+    }
+  }
+
+  return undefined
+}
+
+function countTask(counts: TaskCounts, task: Task | null, sign: 1 | -1): TaskCounts {
+  if (!task) {
+    return counts
+  }
+
+  const status = task.completed ? "completed" : "active"
+
+  return { ...counts, all: counts.all + sign, [status]: counts[status] + sign }
 }
