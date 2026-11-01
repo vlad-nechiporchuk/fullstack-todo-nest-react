@@ -1,0 +1,4 @@
+@baseUrl = http://localhost:3001
+
+### Liveness: the process is up
+GET {{baseUrl}}/api/health/live
