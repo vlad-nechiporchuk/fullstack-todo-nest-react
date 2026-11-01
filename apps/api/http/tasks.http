@@ -1,0 +1,45 @@
+# Written for the VS Code REST Client extension: requests reuse the created task through `# @name`.
+@baseUrl = http://localhost:3001
+
+### List tasks, newest first (status: all | active | completed)
+GET {{baseUrl}}/api/v1/tasks?status=all&limit=50&offset=0
+
+### Create a task
+# @name createTask
+POST {{baseUrl}}/api/v1/tasks
+Content-Type: application/json
+
+{ "title": "Buy milk" }
+
+### Get the created task; the ETag header carries its version
+@taskId = {{createTask.response.body.id}}
+GET {{baseUrl}}/api/v1/tasks/{{taskId}}
+
+### Mark it done, only if nobody changed it since version 1
+PATCH {{baseUrl}}/api/v1/tasks/{{taskId}}
+Content-Type: application/json
+If-Match: "1"
+
+{ "completed": true }
+
+### Same If-Match again: the task is at version 2 now, so this answers 412
+PATCH {{baseUrl}}/api/v1/tasks/{{taskId}}
+Content-Type: application/json
+If-Match: "1"
+
+{ "title": "Buy oat milk" }
+
+### Rename without a precondition (last write wins)
+PATCH {{baseUrl}}/api/v1/tasks/{{taskId}}
+Content-Type: application/json
+
+{ "title": "Buy oat milk" }
+
+### Delete the task
+DELETE {{baseUrl}}/api/v1/tasks/{{taskId}}
+
+### An invalid title answers 400 with one entry per field
+POST {{baseUrl}}/api/v1/tasks
+Content-Type: application/json
+
+{ "title": "   " }

@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { DataSource } from "typeorm"
 import { loadEnv } from "../../common/config/env"
 import { loadDotenvIfPresent } from "../../common/config/load-dotenv"
-import { databaseOptions } from "./database-options"
+import { COMPILED_MIGRATIONS, databaseOptions } from "./database-options"
 
 loadDotenvIfPresent()
 
@@ -11,4 +11,5 @@ loadDotenvIfPresent()
 export default new DataSource({
   ...databaseOptions(loadEnv()),
   entities: [join(__dirname, "../../**/*.entity.js")],
+  migrations: [COMPILED_MIGRATIONS],
 })

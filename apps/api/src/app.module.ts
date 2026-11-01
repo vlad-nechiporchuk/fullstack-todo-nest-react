@@ -6,6 +6,7 @@ import { ZodSerializerInterceptor, ZodValidationPipe } from "nestjs-zod"
 import { ConfigModule, ENV } from "./common/config/config.module"
 import type { Env } from "./common/config/env"
 import { ProblemDetailsFilter } from "./common/errors/problem-details.filter"
+import { TaskModule } from "./core/task/task.module"
 import { DatabaseModule } from "./platform/database/database.module"
 import { HealthModule } from "./platform/health/health.module"
 
@@ -35,6 +36,7 @@ const REQUEST_ID_PATTERN = /^[\w-]{1,64}$/
     }),
     DatabaseModule,
     HealthModule,
+    TaskModule,
   ],
   providers: [
     { provide: APP_PIPE, useClass: ZodValidationPipe },
