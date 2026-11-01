@@ -9,8 +9,12 @@
     "dev:debug": "nest start --watch --debug 127.0.0.1:9229",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.mts",
-    "test:unit": "vitest run --config vitest.config.mts"
+    "test": "vitest run --config vitest.config.mts && vitest run --config vitest.int.config.mts",
+    "test:unit": "vitest run --config vitest.config.mts",
+    "test:int": "vitest run --config vitest.int.config.mts",
+    "migration:run": "nest build && node dist/platform/database/migrate.js",
+    "migration:revert": "nest build && typeorm migration:revert -d dist/platform/database/data-source.js",
+    "migration:generate": "nest build && typeorm migration:generate -d dist/platform/database/data-source.js"
   },
   "dependencies": {
     "@nestjs/common": "11.2.8",
@@ -18,15 +22,18 @@
     "@nestjs/platform-express": "11.2.8",
     "@nestjs/swagger": "11.4.7",
     "@nestjs/terminus": "11.1.1",
+    "@nestjs/typeorm": "11.0.3",
     "@workspace/common": "workspace:*",
     "express": "5.2.1",
     "helmet": "8.3.0",
     "nestjs-pino": "4.6.1",
     "nestjs-zod": "5.5.0",
+    "pg": "8.23.1",
     "pino": "9.14.0",
     "pino-http": "10.5.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
+    "typeorm": "0.3.31",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -36,8 +43,10 @@
     "@swc/core": "1.16.21",
     "@types/express": "5.0.6",
     "@types/node": "catalog:",
+    "@types/supertest": "7.2.1",
     "@workspace/typescript-config": "workspace:*",
     "pino-pretty": "13.2.0",
+    "supertest": "7.3.1",
     "typescript": "catalog:",
     "unplugin-swc": "1.6.0",
     "vitest": "catalog:"
