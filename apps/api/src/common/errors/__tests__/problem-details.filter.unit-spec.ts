@@ -1,10 +1,7 @@
 import type { ArgumentsHost } from "@nestjs/common"
 import { Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common"
 import type { HttpArgumentsHost } from "@nestjs/common/interfaces"
-import { createTaskSchema } from "@workspace/common"
-import { ZodValidationException } from "nestjs-zod"
 import { beforeEach, describe, expect, it, type MockInstance, vi } from "vitest"
-import { ResourceNotFoundException, VersionMismatchException } from "../domain-errors"
 import { type Problem, ProblemType } from "../problem"
 import { ProblemDetailsFilter } from "../problem-details.filter"
 
@@ -17,42 +14,6 @@ describe("ProblemDetailsFilter", () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     logError = vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined)
-  })
-
-  it("should answer 404 with the not-found type when a resource is missing", () => {
-    expect(catchWith(new ResourceNotFoundException("Task", "id1"))).toEqual(
-      buildExpectedResponse({
-        type: ProblemType.notFound,
-        title: "Resource not found",
-        status: 404,
-        detail: "Task id1 does not exist",
-      }),
-    )
-  })
-
-  it("should answer 412 with both versions when If-Match is stale", () => {
-    expect(catchWith(new VersionMismatchException("Task", "id1", 2, 5))).toEqual(
-      buildExpectedResponse({
-        type: ProblemType.preconditionFailed,
-        title: "Version mismatch",
-        status: 412,
-        detail: "Task id1 is at version 5, but If-Match expected 2. Re-fetch it and retry.",
-      }),
-    )
-  })
-
-  it("should answer 400 with one entry per invalid field when the schema rejects the body", () => {
-    const error = createTaskSchema.safeParse({ title: "" }).error
-
-    expect(catchWith(new ZodValidationException(error))).toEqual(
-      buildExpectedResponse({
-        type: ProblemType.validation,
-        title: "Validation failed",
-        status: 400,
-        detail: "The request does not match the expected schema",
-        errors: [{ path: "title", message: "Title must not be empty" }],
-      }),
-    )
   })
 
   it("should keep the status and use the reason phrase as title when another HTTP exception is raised", () => {

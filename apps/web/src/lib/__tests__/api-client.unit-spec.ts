@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { type Problem, taskSchema } from "@workspace/common"
 import { HttpResponse, http } from "msw"
 import { describe, expect, it } from "vitest"
