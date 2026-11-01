@@ -14,7 +14,8 @@ export function configureApp(app: NestExpressApplication, env: Env): void {
   app.useLogger(app.get(Logger))
   app.enableShutdownHooks()
 
-  app.use(helmet())
+  // TLS ends in front of the API, so over plain http this directive would make browsers refetch Swagger UI over https.
+  app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: null } } }))
   app.use(...jsonBody())
   if (env.CORS_ORIGINS.length > 0) {
     app.enableCors({ origin: env.CORS_ORIGINS, exposedHeaders: ["ETag", "Location", "X-Request-Id"] })
