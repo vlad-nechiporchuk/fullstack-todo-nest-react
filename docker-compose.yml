@@ -1,5 +1,14 @@
 name: todo
 
+# One image serves both the migrator and the API, with the same connection to the database.
+x-api: &api
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+  image: todo-api
+  environment: &api-environment
+    DATABASE_URL: postgres://${POSTGRES_USER:-todo}:${POSTGRES_PASSWORD:-todo}@postgres:5432/${POSTGRES_DB:-todo}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -17,6 +26,26 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # Applies pending migrations and exits; the API starts only after it succeeds, so replicas never race to migrate.
+  migrate:
+    <<: *api
+    command: ["node", "dist/platform/database/migrate.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *api
+    environment:
+      <<: *api-environment
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
+    ports:
+      - "${API_PORT:-3001}:3001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:
