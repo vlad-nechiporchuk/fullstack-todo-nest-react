@@ -1,6 +1,5 @@
-import { HttpStatus } from "@nestjs/common"
 import { type ErrorRequestHandler, json, type RequestHandler } from "express"
-import { ProblemException } from "../errors/domain-errors"
+import { InvalidRequestException, ProblemException } from "../errors/domain-errors"
 import { ProblemType, statusPhrase } from "../errors/problem"
 
 const JSON_BODY_LIMIT = "100kb"
@@ -22,12 +21,7 @@ export function toBodyParserProblem(error: unknown): ProblemException | undefine
     return undefined
   }
   if (error.type === "entity.parse.failed") {
-    return new ProblemException(
-      ProblemType.validation,
-      HttpStatus.BAD_REQUEST,
-      "Malformed JSON body",
-      "The request body is not valid JSON",
-    )
+    return new InvalidRequestException("Malformed JSON body", "The request body is not valid JSON")
   }
   return new ProblemException(ProblemType.generic, error.status, statusPhrase(error.status), error.message)
 }

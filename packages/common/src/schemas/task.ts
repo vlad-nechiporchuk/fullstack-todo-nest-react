@@ -42,9 +42,18 @@ export const listTasksQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 })
 
+export const taskCountsSchema = z
+  .object({
+    all: z.int().nonnegative(),
+    active: z.int().nonnegative(),
+    completed: z.int().nonnegative(),
+  })
+  .describe("How many tasks each status filter holds, whatever filter the page itself uses")
+
 export const taskPageSchema = z.object({
   items: z.array(taskSchema),
   total: z.int().nonnegative(),
   limit: z.int().positive(),
   offset: z.int().nonnegative(),
+  counts: taskCountsSchema,
 })
