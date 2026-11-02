@@ -29,6 +29,20 @@ If-Match: "1"
 
 { "title": "Buy oat milk" }
 
+### A weak ETag never matches: If-Match uses strong comparison, so this answers 412
+PATCH {{baseUrl}}/api/v1/tasks/{{taskId}}
+Content-Type: application/json
+If-Match: W/"2"
+
+{ "title": "Buy oat milk" }
+
+### A list of ETags matches when any of them is the current version
+PATCH {{baseUrl}}/api/v1/tasks/{{taskId}}
+Content-Type: application/json
+If-Match: "1", "2"
+
+{ "title": "Buy oat milk" }
+
 ### Rename without a precondition (last write wins)
 PATCH {{baseUrl}}/api/v1/tasks/{{taskId}}
 Content-Type: application/json

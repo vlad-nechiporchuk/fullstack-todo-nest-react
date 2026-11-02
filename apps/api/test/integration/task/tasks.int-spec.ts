@@ -304,10 +304,43 @@ describe("/api/v1/tasks", () => {
         type: `${PROBLEMS}/version-mismatch`,
         title: "Version mismatch",
         status: 412,
-        detail: `Task ${task.id} is at version 2, but If-Match expected 1. Re-fetch it and retry.`,
+        detail: `Task ${task.id} is at version 2, which If-Match does not name. Re-fetch it and retry.`,
         instance: `${TASKS}/${task.id}`,
       })
       expect(await readTask(task.id)).toEqual(current)
+    })
+
+    it("should apply the change when one ETag in an If-Match list carries the current version", async () => {
+      const task = await createTask("Buy milk")
+
+      const response = await api
+        .patch(`${TASKS}/${task.id}`)
+        .set("If-Match", '"7", "1"')
+        .send({ title: "Buy oat milk" })
+        .expect(200)
+
+      const after = await readTask(task.id)
+      expect(after).toEqual({ ...task, title: "Buy oat milk", updatedAt: after.updatedAt, version: 2 })
+      expectUpdatedAfter(after, task)
+      expect(response.body).toEqual(after)
+    })
+
+    it.each([
+      ["the current version only as a weak ETag", 'W/"1"'],
+      ["a version beyond what the database holds", '"2147483648"'],
+    ])("should refuse the change with 412 when If-Match carries %s", async (_case, ifMatch) => {
+      const task = await createTask("Buy milk")
+
+      const response = await api.patch(`${TASKS}/${task.id}`).set("If-Match", ifMatch).send({ title: "v2" }).expect(412)
+
+      expectProblem(response, {
+        type: `${PROBLEMS}/version-mismatch`,
+        title: "Version mismatch",
+        status: 412,
+        detail: `Task ${task.id} is at version 1, which If-Match does not name. Re-fetch it and retry.`,
+        instance: `${TASKS}/${task.id}`,
+      })
+      expect(await readTask(task.id)).toEqual(task)
     })
 
     it("should let exactly one of two concurrent updates with the same If-Match win", async () => {
@@ -344,7 +377,7 @@ describe("/api/v1/tasks", () => {
         type: `${PROBLEMS}/version-mismatch`,
         title: "Version mismatch",
         status: 412,
-        detail: `Task ${task.id} is at version 2, but If-Match expected 1. Re-fetch it and retry.`,
+        detail: `Task ${task.id} is at version 2, which If-Match does not name. Re-fetch it and retry.`,
         instance: `${TASKS}/${task.id}`,
       })
       expect(await readTask(task.id)).toEqual({ ...task, title: "from tab B", version: 2 })
@@ -368,11 +401,9 @@ describe("/api/v1/tasks", () => {
       expect(response.body).toEqual(after)
     })
 
-    it.each([
-      ["not a quoted ETag", "1"],
-      ["a version beyond what the database holds", '"2147483648"'],
-    ])("should reject an If-Match header that is %s", async (_case, ifMatch) => {
+    it("should reject an If-Match header that is not a quoted ETag", async () => {
       const task = await createTask("Buy milk")
+      const ifMatch = "1"
 
       const response = await api
         .patch(`${TASKS}/${task.id}`)
@@ -384,7 +415,7 @@ describe("/api/v1/tasks", () => {
         type: `${PROBLEMS}/validation-error`,
         title: "Invalid If-Match header",
         status: 400,
-        detail: `If-Match must be an ETag such as "3", got: ${ifMatch}`,
+        detail: `If-Match must be * or a list of ETags such as "3", got: ${ifMatch}`,
         instance: `${TASKS}/${task.id}`,
       })
       expect(await readTask(task.id)).toEqual(task)

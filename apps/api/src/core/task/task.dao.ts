@@ -43,10 +43,10 @@ export class TaskDao {
    *
    * @param id - The task to change.
    * @param patch - The fields to change.
-   * @param expectedVersion - When given, the row changes only while it is still at this version.
+   * @param expectedVersions - When given, the row changes only while it is at one of these versions.
    * @returns The updated task, or `null` when no row matched: it is missing or its version has moved on.
    */
-  update(id: string, patch: UpdateTask, expectedVersion?: number): Promise<TaskEntity | null> {
+  update(id: string, patch: UpdateTask, expectedVersions?: number[]): Promise<TaskEntity | null> {
     return this.repository.manager.transaction(async (manager) => {
       const tasks = manager.getRepository(TaskEntity)
       const query = tasks
@@ -64,8 +64,9 @@ export class TaskDao {
         })
         .where("id = :id", { id })
 
-      if (expectedVersion !== undefined) {
-        query.andWhere("version = :expectedVersion", { expectedVersion })
+      // ANY over an array rather than IN: an empty list is valid SQL here and matches no row.
+      if (expectedVersions !== undefined) {
+        query.andWhere("version = ANY(CAST(:expectedVersions AS integer[]))", { expectedVersions })
       }
 
       const result = await query.execute()

@@ -218,13 +218,14 @@ describe("TaskBoard", () => {
       window.history.replaceState(null, "", "/?status=active")
       const api = installFakeTasksApi([API_TASK, SETUP_TASK])
       const { user } = renderApp()
+      const releaseUpdate = api.holdNext("PATCH")
 
       await user.click(await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' }))
 
       const checkbox = screen.getByRole("checkbox", { name: 'Mark "Build the task API" as not done' })
       expect(checkbox).toBeChecked()
       expect(checkbox.closest("li")).toHaveAttribute("data-state", "leaving")
-      expect(api.requests.some((request) => request.method === "PATCH")).toBe(false)
+      releaseUpdate()
 
       expect(await screen.findByText("Nothing left to do.")).toBeInTheDocument()
       expect(readTabs()).toEqual(["All 2", "Active 0", "Completed 2"])
@@ -233,63 +234,106 @@ describe("TaskBoard", () => {
       ])
     })
 
-    it("should undo only the failed change when changes to two tasks overlap", async () => {
-      const readmeTask = buildTask({ id: "33333333-3333-4333-8333-333333333333", title: "Write the README" })
-      const api = installFakeTasksApi([API_TASK, readmeTask])
-      let failFirstChange = () => {}
-      const firstChangeFails = new Promise<void>((resolve) => {
-        failFirstChange = resolve
-      })
-      server.use(
-        http.patch(
-          `${TASKS_URL}/${API_TASK.id}`,
-          async () => {
-            await firstChangeFails
-            return HttpResponse.json(
-              { type: "about:blank", title: "Internal Server Error", status: 500 },
-              { status: 500 },
-            )
-          },
-          { once: true },
-        ),
-      )
-      const { user } = renderApp()
-
-      await user.click(await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' }))
-      await user.click(screen.getByRole("checkbox", { name: 'Mark "Write the README" as done' }))
-      await waitFor(() => expect(api.tasks.find((task) => task.id === readmeTask.id)?.completed).toBe(true))
-      const releaseRefetch = api.holdNext("GET")
-      failFirstChange()
-
-      expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Please try again.")
-      expect(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as done' })).not.toBeChecked()
-      expect(screen.getByRole("checkbox", { name: 'Mark "Write the README" as not done' })).toBeChecked()
-      expect(readTabs()).toEqual(["All 2", "Active 1", "Completed 1"])
-      releaseRefetch()
-    })
-
-    it("should send a quick second toggle with the version the first one produced", async () => {
+    it("should lock a task until its change is saved, then send the next change with the new version", async () => {
       const api = installFakeTasksApi([API_TASK])
       const { user } = renderApp()
-      const checkbox = await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' })
-      const releaseFirstUpdate = api.holdNext("PATCH")
+      const releaseUpdate = api.holdNext("PATCH")
 
+      await user.click(await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' }))
+
+      expect(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as not done' })).toBeDisabled()
+      expect(screen.getByRole("button", { name: 'Edit "Build the task API"' })).toBeDisabled()
+      expect(screen.getByRole("button", { name: 'Delete "Build the task API"' })).toBeDisabled()
+      releaseUpdate()
+
+      const checkbox = await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as not done' })
+      await waitFor(() => expect(checkbox).toBeEnabled())
       await user.click(checkbox)
-      await user.click(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as not done' }))
-      const releaseSecondUpdate = api.holdNext("PATCH")
-      releaseFirstUpdate()
 
-      await waitFor(() => expect(api.requests.filter((request) => request.method === "PATCH")).toHaveLength(2))
-      expect(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as done' })).not.toBeChecked()
-      releaseSecondUpdate()
-
+      expect(await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' })).not.toBeChecked()
       await waitFor(() => expect(api.tasks[0]?.version).toBe(3))
       expect(api.requests.filter((request) => request.method === "PATCH").map((request) => request.ifMatch)).toEqual([
         '"1"',
         '"2"',
       ])
-      expect(await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' })).not.toBeChecked()
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    })
+
+    it("should keep a task locked and its change shown when its tab is left and opened again mid-change", async () => {
+      const api = installFakeTasksApi([API_TASK, SETUP_TASK])
+      const { user } = renderApp()
+      const releaseUpdate = api.holdNext("PATCH")
+
+      await user.click(await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' }))
+      await user.click(screen.getByRole("button", { name: /^Completed/ }))
+      await screen.findByRole("list", { name: "Tasks" })
+      await user.click(screen.getByRole("button", { name: /^All/ }))
+
+      const checkbox = await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as not done' })
+      expect(checkbox).toBeChecked()
+      expect(checkbox).toBeDisabled()
+      releaseUpdate()
+
+      await waitFor(() =>
+        expect(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as not done' })).toBeEnabled(),
+      )
+      expect(api.requests.filter((request) => request.method === "PATCH")).toHaveLength(1)
+    })
+
+    it("should keep other tasks available while one task is being changed", async () => {
+      const readmeTask = buildTask({ id: "33333333-3333-4333-8333-333333333333", title: "Write the README" })
+      const api = installFakeTasksApi([API_TASK, readmeTask])
+      const { user } = renderApp()
+      const releaseFirstUpdate = api.holdNext("PATCH")
+
+      await user.click(await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' }))
+      await user.click(screen.getByRole("checkbox", { name: 'Mark "Write the README" as done' }))
+
+      await waitFor(() => expect(api.tasks.find((task) => task.id === readmeTask.id)?.completed).toBe(true))
+      releaseFirstUpdate()
+      await waitFor(() => expect(readTabs()).toEqual(["All 2", "Active 0", "Completed 2"]))
+    })
+
+    it("should show the task as last loaded when its change is saved but the reload fails", async () => {
+      const api = installFakeTasksApi([API_TASK])
+      const { user } = renderApp()
+      const checkbox = await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' })
+      server.use(http.get(TASKS_URL, () => HttpResponse.error(), { once: true }))
+
+      await user.click(checkbox)
+
+      await waitFor(() =>
+        expect(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as done' })).toBeEnabled(),
+      )
+      expect(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as done' })).not.toBeChecked()
+      expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toEqual([
+        "We couldn't load your tasks. Something went wrong. Please try again.Try again",
+      ])
+      expect(api.tasks).toEqual([
+        { ...API_TASK, completed: true, completedAt: expect.any(String), updatedAt: expect.any(String), version: 2 },
+      ])
+    })
+
+    it("should show the task as last loaded when its change fails and the reload fails too", async () => {
+      const api = installFakeTasksApi([API_TASK])
+      const { user } = renderApp()
+      const checkbox = await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' })
+      server.use(
+        http.patch(`${TASKS_URL}/${API_TASK.id}`, () => HttpResponse.error(), { once: true }),
+        http.get(TASKS_URL, () => HttpResponse.error(), { once: true }),
+      )
+
+      await user.click(checkbox)
+
+      await waitFor(() =>
+        expect(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as done' })).toBeEnabled(),
+      )
+      expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toEqual([
+        "Something went wrong. Please try again.Dismiss",
+        "We couldn't load your tasks. Something went wrong. Please try again.Try again",
+      ])
+      expect(screen.getByRole("checkbox", { name: 'Mark "Build the task API" as done' })).not.toBeChecked()
+      expect(readTabs()).toEqual(["All 1", "Active 1", "Completed 0"])
+      expect(api.tasks).toEqual([API_TASK])
     })
 
     it("should rename a task from the edit field with Enter", async () => {
@@ -306,6 +350,53 @@ describe("TaskBoard", () => {
       expect(api.requests.filter((request) => request.method === "PATCH")).toEqual([
         { method: "PATCH", url: `${TASKS_URL}/${API_TASK.id}`, ifMatch: '"1"', body: { title: "Build the tasks API" } },
       ])
+    })
+
+    it("should keep the draft in the editor when saving it fails, and save it on the next try", async () => {
+      const api = installFakeTasksApi([API_TASK])
+      server.use(http.patch(`${TASKS_URL}/${API_TASK.id}`, () => HttpResponse.error(), { once: true }))
+      const { user } = renderApp()
+
+      await user.click(await screen.findByRole("button", { name: 'Edit "Build the task API"' }))
+      const field = screen.getByRole("textbox", { name: 'New title for "Build the task API"' })
+      await user.clear(field)
+      await user.type(field, "Build the tasks API{Enter}")
+
+      expect(await screen.findByText("Something went wrong. Please try again.")).toBeInTheDocument()
+      await waitFor(() => expect(screen.getByRole("button", { name: "Save title" })).toBeEnabled())
+      expect(screen.getByRole("textbox", { name: 'New title for "Build the task API"' })).toHaveValue(
+        "Build the tasks API",
+      )
+
+      await user.click(screen.getByRole("button", { name: "Save title" }))
+
+      expect(await screen.findByRole("button", { name: 'Edit "Build the tasks API"' })).toBeInTheDocument()
+      expect(api.tasks[0]?.title).toBe("Build the tasks API")
+    })
+
+    it("should save a rename with the version the editor opened at and show the newer title on a conflict", async () => {
+      const api = installFakeTasksApi([API_TASK])
+      const { user } = renderApp()
+
+      await user.click(await screen.findByRole("button", { name: 'Edit "Build the task API"' }))
+      Object.assign(api.tasks[0] ?? {}, { title: "Build the task API v2", version: 2 })
+      await user.type(screen.getByRole("textbox", { name: "New task" }), "Write the README{Enter}")
+      await screen.findByText("Write the README")
+      await waitFor(() =>
+        expect(screen.getByRole("textbox", { name: 'New title for "Build the task API v2"' })).toBeInTheDocument(),
+      )
+      const field = screen.getByRole("textbox", { name: 'New title for "Build the task API v2"' })
+      await user.clear(field)
+      await user.type(field, "Build the tasks API{Enter}")
+
+      expect(
+        await screen.findByText("Someone else changed this task first. You are now seeing the latest version."),
+      ).toBeInTheDocument()
+      expect(await screen.findByRole("button", { name: 'Edit "Build the task API v2"' })).toBeInTheDocument()
+      expect(api.requests.filter((request) => request.method === "PATCH")).toEqual([
+        { method: "PATCH", url: `${TASKS_URL}/${API_TASK.id}`, ifMatch: '"1"', body: { title: "Build the tasks API" } },
+      ])
+      expect(api.tasks.find((task) => task.id === API_TASK.id)?.title).toBe("Build the task API v2")
     })
 
     it("should leave the title as it was when editing is cancelled with Escape", async () => {
@@ -359,10 +450,12 @@ describe("TaskBoard", () => {
     const api = installFakeTasksApi([API_TASK, SETUP_TASK])
     const { user } = renderApp()
 
+    const releaseDelete = api.holdNext("DELETE")
+
     await user.click(await screen.findByRole("button", { name: 'Delete "Build the task API"' }))
 
     expect(screen.getByText("Build the task API").closest("li")).toHaveAttribute("data-state", "leaving")
-    expect(api.requests.some((request) => request.method === "DELETE")).toBe(false)
+    releaseDelete()
     await waitFor(() => expect(screen.queryByText("Build the task API")).not.toBeInTheDocument())
     expect(readTabs()).toEqual(["All 1", "Active 0", "Completed 1"])
     expect(api.requests.filter((request) => request.method === "DELETE")).toEqual([

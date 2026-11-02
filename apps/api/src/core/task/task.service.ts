@@ -35,13 +35,13 @@ export class TaskService {
     return toTask(await this.taskDao.create(input.title))
   }
 
-  async updateTask(id: string, patch: UpdateTask, expectedVersion?: number): Promise<Task> {
-    const updated = await this.taskDao.update(id, patch, expectedVersion)
+  async updateTask(id: string, patch: UpdateTask, expectedVersions?: number[]): Promise<Task> {
+    const updated = await this.taskDao.update(id, patch, expectedVersions)
     if (updated) {
       return toTask(updated)
     }
 
-    if (expectedVersion === undefined) {
+    if (expectedVersions === undefined) {
       throw new ResourceNotFoundException(RESOURCE, id)
     }
 
@@ -51,7 +51,7 @@ export class TaskService {
       throw new ResourceNotFoundException(RESOURCE, id)
     }
 
-    throw new VersionMismatchException(RESOURCE, id, expectedVersion, current.version)
+    throw new VersionMismatchException(RESOURCE, id, current.version)
   }
 
   async deleteTask(id: string): Promise<void> {

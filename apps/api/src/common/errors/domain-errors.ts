@@ -25,12 +25,12 @@ export class ResourceNotFoundException extends ProblemException {
 }
 
 export class VersionMismatchException extends ProblemException {
-  constructor(resource: string, id: string, expected: number, actual: number) {
+  constructor(resource: string, id: string, actual: number) {
     super(
       ProblemType.preconditionFailed,
       HttpStatus.PRECONDITION_FAILED,
       "Version mismatch",
-      `${resource} ${id} is at version ${actual}, but If-Match expected ${expected}. Re-fetch it and retry.`,
+      `${resource} ${id} is at version ${actual}, which If-Match does not name. Re-fetch it and retry.`,
     )
   }
 }
