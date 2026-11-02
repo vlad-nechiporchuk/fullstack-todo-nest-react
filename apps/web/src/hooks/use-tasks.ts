@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query"
 import { LIST_LIMIT_DEFAULT, type TaskStatusFilter, type UpdateTask } from "@workspace/common"
 import { ApiError } from "../lib/api-client"
+import { waitForRowExit } from "../lib/row-exit"
 import { createTask, deleteTask, listTasks, updateTask } from "../services/tasks"
 
 const TASK_LISTS_KEY = ["tasks", "list"] as const
@@ -43,6 +44,8 @@ export function useCreateTask() {
 export interface TaskUpdate {
   patch: UpdateTask
   version: number
+  /** The change takes the task off the open tab, so its row closes up while the change is pending. */
+  leavesList: boolean
 }
 
 /**
@@ -54,7 +57,11 @@ export function useUpdateTask(id: string, onFailure: (error: unknown) => void) {
 
   return useMutation({
     mutationKey: TASK_CHANGE_KEYS.update(id),
-    mutationFn: ({ patch, version }: TaskUpdate) => updateTask(id, patch, version),
+    mutationFn: ({ patch, version, leavesList }: TaskUpdate) => {
+      const request = updateTask(id, patch, version)
+
+      return leavesList ? holdUntilRowExit(request) : request
+    },
     onError: onFailure,
     onSettled: () => refreshLists(queryClient),
   })
@@ -65,7 +72,7 @@ export function useDeleteTask(id: string, onFailure: (error: unknown) => void) {
 
   return useMutation({
     mutationKey: TASK_CHANGE_KEYS.delete(id),
-    mutationFn: () => deleteUnlessGone(id),
+    mutationFn: () => holdUntilRowExit(deleteUnlessGone(id)),
     onError: onFailure,
     onSettled: () => refreshLists(queryClient),
   })
@@ -90,6 +97,15 @@ export function usePendingTaskChange(id: string) {
 // the state it had before the change.
 function refreshLists(queryClient: QueryClient): Promise<void> {
   return queryClient.invalidateQueries({ queryKey: TASK_LISTS_KEY })
+}
+
+// The reload after a change drops a row that left the list, so the change stays pending until the row has closed up.
+async function holdUntilRowExit<T>(request: Promise<T>): Promise<T> {
+  const rowExit = waitForRowExit()
+  const result = await request
+  await rowExit
+
+  return result
 }
 
 // A task someone else deleted first is gone either way, which is what the person asked for.

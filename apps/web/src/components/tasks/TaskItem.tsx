@@ -3,6 +3,7 @@ import { Pencil, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { useDeleteTask, usePendingTaskChange, useUpdateTask } from "../../hooks/use-tasks"
 import { ApiError } from "../../lib/api-client"
+import { ROW_EXIT_MS } from "../../lib/row-exit"
 import { TaskTitleEditor } from "./TaskTitleEditor"
 
 interface TaskItemProps {
@@ -38,6 +39,14 @@ export function TaskItem({ task, statusFilter, isNew, onFailure }: TaskItemProps
   const isLeaving = pendingChange.isDeleting || !matchesFilter(shownTask, statusFilter)
   const isEntering = animation === "grow"
 
+  function toggleCompleted(completed: boolean): void {
+    updateTask.mutate({
+      patch: { completed },
+      version: task.version,
+      leavesList: !matchesFilter({ ...task, completed }, statusFilter),
+    })
+  }
+
   function saveTitle(title: string, version: number): void {
     if (title === task.title) {
       setEditedVersion(null)
@@ -46,7 +55,7 @@ export function TaskItem({ task, statusFilter, isNew, onFailure }: TaskItemProps
 
     // The editor stays open with the draft until the save succeeds; a conflict closes it to show the newer title.
     updateTask.mutate(
-      { patch: { title }, version },
+      { patch: { title }, version, leavesList: false },
       {
         onSuccess: () => {
           setEditedVersion(null)
@@ -79,7 +88,8 @@ export function TaskItem({ task, statusFilter, isNew, onFailure }: TaskItemProps
       data-state={pickRowState(isLeaving, isEntering)}
       inert={isLeaving}
       onAnimationEnd={() => setAnimation("none")}
-      className={`grid rounded-lg transition-[grid-template-rows,opacity] duration-200 ease-in motion-reduce:transition-none ${
+      style={{ transitionDuration: `${ROW_EXIT_MS}ms` }}
+      className={`grid rounded-lg transition-[grid-template-rows,opacity] ease-in motion-reduce:transition-none ${
         isLeaving ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr]"
       } ${ROW_ANIMATIONS[animation]}`}
     >
@@ -89,9 +99,7 @@ export function TaskItem({ task, statusFilter, isNew, onFailure }: TaskItemProps
             type="checkbox"
             checked={shownTask.completed}
             disabled={isBusy}
-            onChange={(event) =>
-              updateTask.mutate({ patch: { completed: event.target.checked }, version: task.version })
-            }
+            onChange={(event) => toggleCompleted(event.target.checked)}
             aria-label={`Mark "${shownTask.title}" as ${shownTask.completed ? "not done" : "done"}`}
             className="size-5 shrink-0 cursor-pointer accent-brand-600 disabled:cursor-not-allowed transition-transform motion-safe:checked:scale-110"
           />

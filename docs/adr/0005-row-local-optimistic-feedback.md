@@ -16,7 +16,9 @@ The cache holds only what the server returned.
 
 - While a change is pending, the task's row shows it from the change's own input: ticked, renamed, or closing up when
   it no longer matches the open tab or is being deleted. The row reads the pending change from the mutation cache by
-  task id, so a row that unmounts and comes back, as on a tab switch, still shows it.
+  task id, so a row that unmounts and comes back, as on a tab switch, still shows it. A change that closes up its row
+  stays pending until the close-up transition has finished, so a fast response and reload cannot remove the row
+  mid-transition.
 - The task's controls are disabled while a change to that task is pending. Other tasks stay available.
 - A change carries the version it was based on: the one shown when the checkbox or delete was clicked, or the one the
   title editor opened at, so a reload while editing cannot turn a stale draft into an overwrite. The editor keeps the

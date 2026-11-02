@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { HttpResponse, http } from "msw"
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { waitForRowExit } from "../../../lib/row-exit"
 import { buildTask, installFakeTasksApi } from "../../../test/fake-tasks-api"
 import { server } from "../../../test/msw-server"
 import { renderApp } from "../../../test/render-app"
@@ -14,7 +15,16 @@ const SETUP_TASK = buildTask({
   completedAt: "2026-11-01T11:00:00.000Z",
 })
 
+vi.mock("../../../lib/row-exit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/row-exit")>()),
+  waitForRowExit: vi.fn(),
+}))
+
 describe("TaskBoard", () => {
+  beforeEach(() => {
+    vi.mocked(waitForRowExit).mockReset().mockResolvedValue(undefined)
+  })
+
   it("should list the tasks with the count of every status and the tasks remaining", async () => {
     installFakeTasksApi([API_TASK, SETUP_TASK])
     renderApp()
@@ -212,20 +222,24 @@ describe("TaskBoard", () => {
       expect(api.requests.filter((request) => request.method === "PATCH")).toEqual([
         { method: "PATCH", url: `${TASKS_URL}/${API_TASK.id}`, ifMatch: '"1"', body: { completed: true } },
       ])
+      expect(waitForRowExit).not.toHaveBeenCalled()
     })
 
-    it("should close up a task that leaves the Active tab once it is marked done", async () => {
+    it("should close up a task that leaves the Active tab once it is marked done, and keep it until it has closed", async () => {
       window.history.replaceState(null, "", "/?status=active")
       const api = installFakeTasksApi([API_TASK, SETUP_TASK])
       const { user } = renderApp()
-      const releaseUpdate = api.holdNext("PATCH")
+      const releaseRowExit = holdRowExit()
 
       await user.click(await screen.findByRole("checkbox", { name: 'Mark "Build the task API" as done' }))
 
       const checkbox = screen.getByRole("checkbox", { name: 'Mark "Build the task API" as not done' })
       expect(checkbox).toBeChecked()
       expect(checkbox.closest("li")).toHaveAttribute("data-state", "leaving")
-      releaseUpdate()
+      await waitFor(() => expect(api.tasks.find((task) => task.id === API_TASK.id)?.completed).toBe(true))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(checkbox.closest("li")).toHaveAttribute("data-state", "leaving")
+      releaseRowExit()
 
       expect(await screen.findByText("Nothing left to do.")).toBeInTheDocument()
       expect(readTabs()).toEqual(["All 2", "Active 0", "Completed 2"])
@@ -446,16 +460,20 @@ describe("TaskBoard", () => {
     })
   })
 
-  it("should delete a task and update the counts", async () => {
+  it("should close up a deleted task, keep it until it has closed, then update the counts", async () => {
     const api = installFakeTasksApi([API_TASK, SETUP_TASK])
     const { user } = renderApp()
-
-    const releaseDelete = api.holdNext("DELETE")
+    const releaseRowExit = holdRowExit()
 
     await user.click(await screen.findByRole("button", { name: 'Delete "Build the task API"' }))
 
-    expect(screen.getByText("Build the task API").closest("li")).toHaveAttribute("data-state", "leaving")
-    releaseDelete()
+    const row = screen.getByText("Build the task API").closest("li")
+    expect(row).toHaveAttribute("data-state", "leaving")
+    await waitFor(() => expect(api.tasks.map((task) => task.id)).toEqual([SETUP_TASK.id]))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(row).toBeInTheDocument()
+    expect(row).toHaveAttribute("data-state", "leaving")
+    releaseRowExit()
     await waitFor(() => expect(screen.queryByText("Build the task API")).not.toBeInTheDocument())
     expect(readTabs()).toEqual(["All 1", "Active 0", "Completed 1"])
     expect(api.requests.filter((request) => request.method === "DELETE")).toEqual([
@@ -475,6 +493,17 @@ describe("TaskBoard", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
 })
+
+function holdRowExit(): () => void {
+  let release = () => {}
+  vi.mocked(waitForRowExit).mockReturnValueOnce(
+    new Promise((resolve) => {
+      release = () => resolve()
+    }),
+  )
+
+  return () => release()
+}
 
 function readTabs(): string[] {
   const group = screen.getByRole("group", { name: "Filter tasks" })
