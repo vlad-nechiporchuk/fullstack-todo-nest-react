@@ -4,16 +4,21 @@ import { type KeyboardEvent, useId, useState } from "react"
 
 interface TaskTitleEditorProps {
   title: string
+  isSaving: boolean
   onSave: (title: string) => void
   onCancel: () => void
 }
 
-export function TaskTitleEditor({ title, onSave, onCancel }: TaskTitleEditorProps) {
+export function TaskTitleEditor({ title, isSaving, onSave, onCancel }: TaskTitleEditorProps) {
   const [draft, setDraft] = useState(title)
   const [error, setError] = useState<string | null>(null)
   const errorId = useId()
 
   function saveDraft(): void {
+    if (isSaving) {
+      return
+    }
+
     const parsed = createTaskSchema.shape.title.safeParse(draft)
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? null)
@@ -26,7 +31,7 @@ export function TaskTitleEditor({ title, onSave, onCancel }: TaskTitleEditorProp
   function handleKey(event: KeyboardEvent<HTMLInputElement>): void {
     if (event.key === "Enter") {
       saveDraft()
-    } else if (event.key === "Escape") {
+    } else if (event.key === "Escape" && !isSaving) {
       onCancel()
     }
   }
@@ -39,6 +44,7 @@ export function TaskTitleEditor({ title, onSave, onCancel }: TaskTitleEditorProp
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKey}
+          readOnly={isSaving}
           // biome-ignore lint/a11y/noAutofocus: the field appears because the person asked to edit this task.
           autoFocus
           aria-label={`New title for "${title}"`}
@@ -49,6 +55,7 @@ export function TaskTitleEditor({ title, onSave, onCancel }: TaskTitleEditorProp
         <button
           type="button"
           onClick={saveDraft}
+          disabled={isSaving}
           aria-label="Save title"
           className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
@@ -57,6 +64,7 @@ export function TaskTitleEditor({ title, onSave, onCancel }: TaskTitleEditorProp
         <button
           type="button"
           onClick={onCancel}
+          disabled={isSaving}
           aria-label="Cancel editing"
           className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition-colors hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-brand-600"
         >

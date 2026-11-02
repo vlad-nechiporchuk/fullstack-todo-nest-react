@@ -1,7 +1,8 @@
 import type { Task, TaskStatusFilter } from "@workspace/common"
 import { Pencil, Trash2 } from "lucide-react"
 import { useState } from "react"
-import { useDeleteTask, useUpdateTask } from "../../hooks/use-tasks"
+import { useDeleteTask, usePendingTaskChange, useUpdateTask } from "../../hooks/use-tasks"
+import { ApiError } from "../../lib/api-client"
 import { TaskTitleEditor } from "./TaskTitleEditor"
 
 interface TaskItemProps {
@@ -10,9 +11,6 @@ interface TaskItemProps {
   isNew: boolean
   onFailure: (error: unknown) => void
 }
-
-// Matches duration-200 on the row, so the row has closed up when its request starts.
-const EXIT_DURATION_MS = 200
 
 type RowAnimation = "in" | "grow" | "saved" | "none"
 
@@ -25,52 +23,53 @@ const ROW_ANIMATIONS = {
 } as const satisfies Record<RowAnimation, string>
 
 const ICON_BUTTON =
-  "inline-flex size-10 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-2 focus-visible:outline-brand-600"
+  "inline-flex size-10 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
 
+/** One change to a task at a time: its controls are disabled until the change and the reload after it are done. */
 export function TaskItem({ task, statusFilter, isNew, onFailure }: TaskItemProps) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [isLeaving, setIsLeaving] = useState(false)
-  const [leavingCompleted, setLeavingCompleted] = useState<boolean | null>(null)
-  const isCompleted = leavingCompleted ?? task.completed
+  // The version the editor opened at, so a reload while editing cannot make the save overwrite a newer title.
+  const [editedVersion, setEditedVersion] = useState<number | null>(null)
   const [animation, setAnimation] = useState<RowAnimation>(isNew ? "grow" : "in")
-  const isEntering = animation === "grow"
   const updateTask = useUpdateTask(task.id, onFailure)
   const deleteTask = useDeleteTask(task.id, onFailure)
+  const pendingChange = usePendingTaskChange(task.id)
+  const { isBusy } = pendingChange
+  const shownTask = { ...task, ...pendingChange.patch }
+  const isLeaving = pendingChange.isDeleting || !matchesFilter(shownTask, statusFilter)
+  const isEntering = animation === "grow"
 
-  function saveTitle(title: string): void {
-    if (title !== task.title) {
-      updateTask.mutate({ title })
-      setAnimation("saved")
-    }
-    setIsEditing(false)
-  }
-
-  function toggleCompleted(completed: boolean): void {
-    if (statusFilter === "all") {
-      updateTask.mutate({ completed })
+  function saveTitle(title: string, version: number): void {
+    if (title === task.title) {
+      setEditedVersion(null)
       return
     }
 
-    // On a status tab the task no longer belongs once toggled, so it closes up like a deleted row.
-    setLeavingCompleted(completed)
-    leaveThen(() => updateTask.mutate({ completed }))
+    // The editor stays open with the draft until the save succeeds; a conflict closes it to show the newer title.
+    updateTask.mutate(
+      { patch: { title }, version },
+      {
+        onSuccess: () => {
+          setEditedVersion(null)
+          setAnimation("saved")
+        },
+        onError: (error) => {
+          if (isVersionMismatch(error)) {
+            setEditedVersion(null)
+          }
+        },
+      },
+    )
   }
 
-  function leaveThen(action: () => void): void {
-    if (prefersReducedMotion()) {
-      action()
-      return
-    }
-
-    setIsLeaving(true)
-    // Not cancelled on unmount: switching tabs mid-animation must not undo what the person asked for.
-    setTimeout(action, EXIT_DURATION_MS)
-  }
-
-  if (isEditing) {
+  if (editedVersion !== null) {
     return (
       <li className="py-3 motion-safe:animate-task-in">
-        <TaskTitleEditor title={task.title} onSave={saveTitle} onCancel={() => setIsEditing(false)} />
+        <TaskTitleEditor
+          title={task.title}
+          isSaving={updateTask.isPending}
+          onSave={(title) => saveTitle(title, editedVersion)}
+          onCancel={() => setEditedVersion(null)}
+        />
       </li>
     )
   }
@@ -88,19 +87,23 @@ export function TaskItem({ task, statusFilter, isNew, onFailure }: TaskItemProps
         <div className="flex items-center gap-3 py-3">
           <input
             type="checkbox"
-            checked={isCompleted}
-            onChange={(event) => toggleCompleted(event.target.checked)}
-            aria-label={`Mark "${task.title}" as ${isCompleted ? "not done" : "done"}`}
-            className="size-5 shrink-0 cursor-pointer accent-brand-600 transition-transform motion-safe:checked:scale-110"
+            checked={shownTask.completed}
+            disabled={isBusy}
+            onChange={(event) =>
+              updateTask.mutate({ patch: { completed: event.target.checked }, version: task.version })
+            }
+            aria-label={`Mark "${shownTask.title}" as ${shownTask.completed ? "not done" : "done"}`}
+            className="size-5 shrink-0 cursor-pointer accent-brand-600 disabled:cursor-not-allowed transition-transform motion-safe:checked:scale-110"
           />
           <span
-            className={`min-w-0 flex-1 break-words transition-colors duration-300 ${isCompleted ? "text-gray-400 line-through" : ""}`}
+            className={`min-w-0 flex-1 break-words transition-colors duration-300 ${shownTask.completed ? "text-gray-400 line-through" : ""}`}
           >
-            {task.title}
+            {shownTask.title}
           </span>
           <button
             type="button"
-            onClick={() => setIsEditing(true)}
+            onClick={() => setEditedVersion(task.version)}
+            disabled={isBusy}
             aria-label={`Edit "${task.title}"`}
             className={ICON_BUTTON}
           >
@@ -108,7 +111,8 @@ export function TaskItem({ task, statusFilter, isNew, onFailure }: TaskItemProps
           </button>
           <button
             type="button"
-            onClick={() => leaveThen(() => deleteTask.mutate())}
+            onClick={() => deleteTask.mutate()}
+            disabled={isBusy}
             aria-label={`Delete "${task.title}"`}
             className={ICON_BUTTON}
           >
@@ -120,8 +124,12 @@ export function TaskItem({ task, statusFilter, isNew, onFailure }: TaskItemProps
   )
 }
 
-function prefersReducedMotion(): boolean {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false
+function isVersionMismatch(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 412
+}
+
+function matchesFilter(task: Task, statusFilter: TaskStatusFilter): boolean {
+  return statusFilter === "all" || task.completed === (statusFilter === "completed")
 }
 
 function pickRowState(isLeaving: boolean, isEntering: boolean): "leaving" | "entering" | undefined {
