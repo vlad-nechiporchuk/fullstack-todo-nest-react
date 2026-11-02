@@ -20,7 +20,7 @@ describe("TaskService", () => {
     update.mockResolvedValue(null)
     findById.mockResolvedValue(null)
 
-    await expect(taskService.updateTask(ID, { completed: true }, 1)).rejects.toEqual(
+    await expect(taskService.updateTask(ID, { completed: true }, [1])).rejects.toEqual(
       new ResourceNotFoundException("Task", ID),
     )
   })

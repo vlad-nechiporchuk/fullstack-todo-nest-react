@@ -65,7 +65,9 @@ export class TaskController {
   @ApiHeader({
     name: "If-Match",
     required: false,
-    description: 'The task\'s current version as an ETag, e.g. "3". When it no longer matches, the API answers 412.',
+    description:
+      'The task\'s current version as an ETag, e.g. "3", or a list of them. Compared strongly: a weak tag such as W/"3" ' +
+      "never matches. When no listed version is current, the API answers 412.",
   })
   @ZodResponse({ status: HttpStatus.OK, description: "The updated task", type: TaskResponseDto })
   @ApiProblemResponses(HttpStatus.BAD_REQUEST, HttpStatus.NOT_FOUND, HttpStatus.PRECONDITION_FAILED)
